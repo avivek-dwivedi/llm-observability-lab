@@ -38,11 +38,18 @@ from opentelemetry.sdk.metrics.export import (
     InMemoryMetricReader,
 )
 from opentelemetry.sdk.metrics.export import MetricExporter
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter as HTTPMetricExporter,
 )
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
     OTLPMetricExporter as GRPCMetricExporter,
+)
+
+from observability.identity import (
+    base_labels,
+    resource_attributes,
+    SERVICE_VERSION,
 )
 
 log = logging.getLogger("llm_obs.metrics")
@@ -59,10 +66,6 @@ _duration_histogram: Histogram | None = None
 
 # Latency histogram buckets — 4s boundary included for the SLO.
 _DURATION_BUCKETS = (0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
-
-# Bounded label defaults
-DEFAULT_SERVICE = "llm-observability-lab"
-DEFAULT_ENV = "default"
 
 
 def _build_metric_exporter() -> MetricExporter:
@@ -94,14 +97,7 @@ def configure_metrics(service_name: str | None = None) -> MeterProvider:
     if _METER_PROVIDER is not None:
         return _METER_PROVIDER
 
-    resource_attrs = {
-        "service.name": service_name
-        or os.getenv("OTEL_SERVICE_NAME", DEFAULT_SERVICE),
-        "service.version": "0.2.0",
-    }
-    from opentelemetry.sdk.resources import Resource
-
-    resource = Resource.create(resource_attrs)
+    resource = Resource.create(resource_attributes(service_name_override=service_name))
 
     exporter = _build_metric_exporter()
     reader = PeriodicExportingMetricReader(
@@ -113,7 +109,7 @@ def configure_metrics(service_name: str | None = None) -> MeterProvider:
     provider = MeterProvider(resource=resource, metric_readers=[reader])
     metrics.set_meter_provider(provider)
     _METER_PROVIDER = provider
-    _METER = provider.get_meter("llm-observability.metrics", "0.2.0")
+    _METER = provider.get_meter("llm-observability.metrics", SERVICE_VERSION)
 
     # --- Create instruments -------------------------------------------------
     _requests_counter = _METER.create_counter(
@@ -156,10 +152,9 @@ def _base_labels(
 ) -> dict:
     """Build the bounded label set."""
     return {
-        "service": os.getenv("OTEL_SERVICE_NAME", DEFAULT_SERVICE),
+        **base_labels(),
         "model": model or os.getenv("GROQ_MODEL", "allam-2-7b"),
         "workflow": workflow,
-        "environment": environment or os.getenv("OTEL_ENV", DEFAULT_ENV),
         "result": result,
     }
 

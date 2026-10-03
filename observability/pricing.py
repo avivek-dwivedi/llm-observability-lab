@@ -12,6 +12,15 @@ IMPORTANT — the three tiers we keep separate:
 
 Use ONE consistent price configuration when comparing dashboards so differences
 are attributable to observed usage, not to differing price catalogs.
+
+Precedence (highest wins):
+  1. explicit ``PricingConfig`` passed by the caller
+  2. ``PRICE_INPUT_PER_M`` / ``PRICE_OUTPUT_PER_M`` environment override
+  3. known-model entry in ``DEFAULT_CATALOG``
+  4. unknown model with no config → ``None`` ("missing pricing"), never $0
+
+``setup_langfuse_model.py`` resolves prices through the same module so
+Prometheus/Grafana and Langfuse can never disagree for the same model.
 """
 
 from __future__ import annotations
@@ -20,6 +29,12 @@ import os
 from dataclasses import dataclass
 
 from observability.usage import Usage
+
+# Legacy hard-coded fallback used before the catalog existed.  Kept ONLY as
+# the env-var default so existing .env files keep resolving to the same
+# numbers they always did.  Not used for models present in the catalog.
+_ENV_FALLBACK_INPUT_PER_M = 50.00
+_ENV_FALLBACK_OUTPUT_PER_M = 150.00
 
 
 @dataclass(frozen=True)
@@ -31,17 +46,55 @@ class PricingConfig:
 
     @classmethod
     def from_env(cls) -> "PricingConfig":
+        """Env override values. Explicitly set env vars win over the catalog;
+        unset env vars fall back to the catalog-era defaults."""
         return cls(
-            input_per_m=float(os.getenv("PRICE_INPUT_PER_M", "50.00")),
-            output_per_m=float(os.getenv("PRICE_OUTPUT_PER_M", "150.00")),
+            input_per_m=float(os.getenv("PRICE_INPUT_PER_M", _ENV_FALLBACK_INPUT_PER_M)),
+            output_per_m=float(os.getenv("PRICE_OUTPUT_PER_M", _ENV_FALLBACK_OUTPUT_PER_M)),
         )
 
 
-# A small, explicit catalog.  Add rows as needed; keep it the single source of
-# truth so dashboards are compared on a level playing field.
+def env_pricing_override() -> PricingConfig | None:
+    """Return a PricingConfig only when BOTH price env vars are explicitly set.
+
+    This distinguishes "the operator pinned prices in the environment"
+    (precedence 2) from "no override configured" (fall through to the model
+    catalog).  Unset or empty variables → None.
+    """
+    raw_in = os.getenv("PRICE_INPUT_PER_M", "").strip()
+    raw_out = os.getenv("PRICE_OUTPUT_PER_M", "").strip()
+    if not raw_in or not raw_out:
+        return None
+    try:
+        return PricingConfig(input_per_m=float(raw_in), output_per_m=float(raw_out))
+    except ValueError:
+        log_bad = raw_in  # keep the offending value visible in the message
+        raise ValueError(
+            f"Invalid PRICE_INPUT_PER_M/PRICE_OUTPUT_PER_M env values: "
+            f"'{log_bad}', '{raw_out}' are not numbers"
+        )
+
+
+def resolve_pricing(model: str | None) -> PricingConfig | None:
+    """Resolve the effective pricing for a model (precedence 2 → 3 → 4).
+
+    Returns ``None`` when the model is unknown and no env override exists —
+    callers must surface "missing pricing", never $0.
+    """
+    override = env_pricing_override()
+    if override is not None:
+        return override
+    if model and model in DEFAULT_CATALOG:
+        return DEFAULT_CATALOG[model]
+    return None
+
+
+# A small, explicit catalog.  Add rows as needed.
 # Prices are USD per 1 million tokens.  These are *illustrative* — they use
 # premium-model-level pricing so dashboard cost numbers are large enough to
 # be visually meaningful in demos (not a real bill).
+# NOTE: the operator env override (PRICE_INPUT_PER_M / PRICE_OUTPUT_PER_M)
+# always wins over these entries — see resolve_pricing().
 DEFAULT_CATALOG: dict[str, PricingConfig] = {
     "allam-2-7b": PricingConfig(input_per_m=50.00, output_per_m=150.00),
     "llama-3.1-8b-instant": PricingConfig(input_per_m=0.05, output_per_m=0.08),
@@ -67,19 +120,17 @@ def estimate_cost(
 ) -> CostEstimate | None:
     """Return an estimated cost, or ``None`` when pricing is missing.
 
-    ``config`` wins; otherwise the model is looked up in ``DEFAULT_CATALOG``;
-    finally we fall back to env-derived prices.  If none of those yield a price
-    we return ``None`` — callers must surface "missing pricing", not $0.
+    Precedence:
+      1. explicit ``config`` argument
+      2. env override (PRICE_INPUT_PER_M + PRICE_OUTPUT_PER_M both set)
+      3. known-model catalog entry
+      4. otherwise ``None`` — surface "missing pricing", not $0.
     """
     cfg = config
-    if cfg is None and model:
-        cfg = DEFAULT_CATALOG.get(model)
     if cfg is None:
-        cfg = PricingConfig.from_env()
-        # If the env defaults are 0 and the model isn't in the catalog, treat
-        # as missing rather than silently free.
-        if model and model not in DEFAULT_CATALOG:
-            return None
+        cfg = resolve_pricing(model)
+    if cfg is None:
+        return None
 
     input_cost = usage.input_tokens * cfg.input_per_m / 1_000_000
     output_cost = usage.output_tokens * cfg.output_per_m / 1_000_000

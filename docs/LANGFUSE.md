@@ -54,6 +54,10 @@ Langfuse ingests OTLP traces at `POST /api/public/otel/v1/traces`.
   computed outside Langfuse (see `observability/pricing.py`) and, if desired,
   attached as a custom metadata attribute (`cost.estimated_usd`).  State this
   limitation in dashboards rather than building a replacement UI.
-- `gen_ai.prompt` / `gen_ai.completion` are stripped by the collector's
-  sensitive-attribute filter; Langfuse will show empty prompt/completion fields
-  by design (this lab never records prompt text).
+- `gen_ai.prompt` / `gen_ai.completion` and `llm.input_messages` /
+  `llm.output_messages` are **intentionally kept** so Langfuse renders useful
+  Input/Output fields. The demo workload is synthetic/non-sensitive trivia
+  prompts. Only true secret keys (`authorization`, `x-api-key`, `api_key`)
+  are stripped by the collector's `attributes/drop_sensitive` processor.
+  If you trace sensitive workloads, configure content redaction
+  (e.g. re-add prompt attributes to the drop list) **before** export.

@@ -233,14 +233,26 @@ This project deliberately does **not** include:
 Where a backend lacks a native dashboard view, the lab **states the
 limitation** instead of building a replacement UI.
 
-## Safety
+## Safety & data handling
 
-- Prompt text and API keys are never recorded as span attributes. The
-  collector additionally strips known sensitive keys.
-- `04_failures.py` uses a **deterministic fake provider** — it never calls
-  the real Groq API and cannot exhaust quota.
-- Live Groq calls are gated behind `ALLOW_LIVE_CALLS=1`; `06_synthetic_metrics.py`
-  is fully offline.
+- **API keys / auth headers are not recorded** — the collector's
+  `attributes/drop_sensitive` processor strips `authorization`, `x-api-key`
+  and `api_key` attributes before export.
+- **Prompt/completion content IS intentionally captured**
+  (`llm.input_messages` / `llm.output_messages` / `gen_ai.prompt` /
+  `gen_ai.completion`) so Langfuse and Phoenix can render useful Input/Output
+  fields — this is the point of a tracing demo.
+- **The workload is synthetic and non-sensitive.** Prompts are trivia-style
+  questions ("List three primary colors"); `04_failures.py` uses a
+  deterministic fake provider that never calls the real API.
+- **Production deployments handling sensitive data** must configure
+  redaction/content-capture policies (e.g. re-add prompt attributes to the
+  collector's drop list, or enable a masking processor) *before* telemetry
+  export. PII/privacy controls are intentionally out of scope for this lab.
+- **External exporters (LangSmith) receive the same spans** — enable them
+  only when appropriate for your organization's data policy.
+- Live Groq calls are gated behind `ALLOW_LIVE_CALLS=1`;
+  `06_synthetic_metrics.py` is fully offline and generates metrics only.
 
 ## Testing
 

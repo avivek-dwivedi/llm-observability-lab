@@ -1,11 +1,20 @@
 """Tests for cost telemetry — three-tier separation."""
 
+import pytest
+
 from observability.pricing import (
     PricingConfig,
     estimate_cost,
     DEFAULT_CATALOG,
 )
 from observability.usage import Usage
+
+
+@pytest.fixture(autouse=True)
+def _no_pricing_env(monkeypatch):
+    """Isolate tests from .env pricing overrides (loaded by examples._common)."""
+    monkeypatch.delenv("PRICE_INPUT_PER_M", raising=False)
+    monkeypatch.delenv("PRICE_OUTPUT_PER_M", raising=False)
 
 
 def test_configured_estimate():

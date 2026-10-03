@@ -35,6 +35,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter as GRPCSpanExporter,
 )
 
+from observability.identity import resource_attributes, SERVICE_VERSION
+
 log = logging.getLogger("llm_obs.instrumentation")
 
 _PROVIDER: TracerProvider | None = None
@@ -71,13 +73,7 @@ def configure_otel(service_name: str | None = None) -> TracerProvider:
     if _PROVIDER is not None:
         return _PROVIDER
 
-    resource = Resource.create(
-        {
-            "service.name": service_name
-            or os.getenv("OTEL_SERVICE_NAME", "llm-observability-lab"),
-            "service.version": "0.1.0",
-        }
-    )
+    resource = Resource.create(resource_attributes(service_name_override=service_name))
 
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(

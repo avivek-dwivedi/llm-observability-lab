@@ -37,6 +37,9 @@ services:
       - "9095:9090"
     volumes:
       - ./infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Recording/alerting rules — prometheus.yml loads /etc/prometheus/rules/*.yml.
+      # Without this mount the SLO recording rules silently never load.
+      - ./infrastructure/prometheus-rules.yml:/etc/prometheus/rules/llm-slo-rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"

@@ -241,13 +241,15 @@ identical).
 - [x] Script 4 shows each retry attempt as a distinct child span
       (`failure.timeout.attempt_1/2/3`, `failure.rate_limit.attempt_1/2/3`).
 - [x] Error spans have status=ERROR + an exception event in Phoenix and Langfuse.
-- [x] No prompt text / API keys appear in Phoenix's input/output columns —
-      the collector's `attributes/drop_sensitive` processor strips them.  (Note:
-      Phoenix's auto-instrumented `Completions` spans DO show input/output JSON
-      from OpenInference — this is expected; the collector filter targets
-      `gen_ai.prompt`/`gen_ai.completion` attributes, not OpenInference's
-      `input`/`output` JSON.  If you need those stripped too, add
-      `input.value`/`output.value` to the processor's delete list.)
+- [x] API keys do not appear in Phoenix's input/output columns — the
+      collector's `attributes/drop_sensitive` processor strips `authorization`,
+      `x-api-key` and `api_key`. Prompt/completion content IS intentionally
+      kept for the tracing UIs (synthetic, non-sensitive demo prompts — see
+      README Safety & data handling; production deployments handling sensitive
+      data must configure redaction before export). Phoenix's
+      auto-instrumented `Completions` spans also show input/output JSON from
+      OpenInference — expected; if you need those stripped too, add
+      `input.value`/`output.value` to the processor's delete list.
 - [x] `cost.estimated_usd` attribute is present on all batch spans — visible
       in span detail / metadata, but does NOT populate native cost columns
       (limitation stated, not replaced).

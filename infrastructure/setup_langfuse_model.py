@@ -16,20 +16,26 @@ re-prices past traces). Safe to run multiple times.
 import base64
 import json
 import os
+import sys
 import urllib.request
 import urllib.error
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Reuse the application's pricing resolution so Langfuse and
+# Prometheus/Grafana can NEVER disagree for the same model
+# (see docs on resolve_pricing precedence: env override → catalog → None).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from observability.pricing import resolve_pricing  # noqa: E402
 
 LANGFUSE_HOST = os.getenv("LANGFUSE_BASE_URL", "http://localhost:3000")
 LANGFUSE_PK = os.getenv("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SK = os.getenv("LANGFUSE_SECRET_KEY", "")
 MODEL = os.getenv("GROQ_MODEL", "allam-2-7b")
-INPUT_PER_M = float(os.getenv("PRICE_INPUT_PER_M", "5.00"))
-OUTPUT_PER_M = float(os.getenv("PRICE_OUTPUT_PER_M", "15.00"))
-INPUT_PRICE = INPUT_PER_M / 1_000_000    # per-token price for the API
-OUTPUT_PRICE = OUTPUT_PER_M / 1_000_000
 
 
 def _request(path: str, method: str = "GET", body: dict | None = None):
@@ -54,12 +60,21 @@ def main():
         print("ERROR: LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set in .env")
         return
 
+    cfg = resolve_pricing(MODEL)
+    if cfg is None:
+        print(f"ERROR: no pricing configured for model '{MODEL}'. "
+              f"Set PRICE_INPUT_PER_M / PRICE_OUTPUT_PER_M in .env "
+              f"(or add the model to observability.pricing.DEFAULT_CATALOG).")
+        return
+    print(f"Effective pricing for '{MODEL}' (same source as the app's "
+          f"cost estimates): input ${cfg.input_per_m}/M, output ${cfg.output_per_m}/M")
+
     body = {
         "modelName": MODEL,
         "matchPattern": f"(?i)^({MODEL})$",
         "unit": "TOKENS",
-        "inputPrice": INPUT_PRICE,
-        "outputPrice": OUTPUT_PRICE,
+        "inputPrice": cfg.input_per_m / 1_000_000,
+        "outputPrice": cfg.output_per_m / 1_000_000,
     }
 
     # Replace an existing definition whose prices may be stale.

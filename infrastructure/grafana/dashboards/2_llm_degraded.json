@@ -196,7 +196,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.50, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "A"
         }
       ],
@@ -241,7 +241,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.90, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.90, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "A"
         }
       ],
@@ -286,7 +286,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.95, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "A"
         }
       ],
@@ -331,7 +331,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.99, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "A"
         }
       ],
@@ -376,7 +376,7 @@
       },
       "targets": [
         {
-          "expr": "sum(llm_obs_llm_request_duration_seconds_sum{workflow=\"llm_degraded\"}) / clamp_min(sum(llm_obs_llm_request_duration_seconds_count{workflow=\"llm_degraded\"}), 1)",
+          "expr": "sum(llm_obs_llm_request_duration_seconds_sum{workflow=\"llm_degraded\",result=\"success\"}) / clamp_min(sum(llm_obs_llm_request_duration_seconds_count{workflow=\"llm_degraded\",result=\"success\"}), 1)",
           "refId": "A"
         }
       ],
@@ -574,22 +574,22 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.50, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "A",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.90, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.90, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "B",
           "legendFormat": "P90"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.95, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "C",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\"}))",
+          "expr": "histogram_quantile(0.99, sum by (le) (llm_obs_llm_request_duration_seconds_bucket{workflow=\"llm_degraded\",result=\"success\"}))",
           "refId": "D",
           "legendFormat": "P99"
         }

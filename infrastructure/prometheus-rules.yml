@@ -26,24 +26,37 @@ groups:
           (llm_obs:request_total_7d - llm_obs:request_success_total_7d)
           / clamp_min(llm_obs:request_total_7d * 0.005, 1)
 
-      # P95 latency over 1h (for the 4-second latency SLO)
+      # P95 latency over 1h — SUCCESSFUL requests only.
+      # Failures are excluded from the latency SLO population per docs/SLOS.md
+      # ("eligible = successful logical requests only"); the histogram carries
+      # `result` labels so we can filter.
       - record: llm_obs:p95_latency_1h
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(llm_obs_llm_request_duration_seconds_bucket[1h])))
+            sum by (le) (rate(llm_obs_llm_request_duration_seconds_bucket{result="success"}[1h])))
 
-      # % of requests under 4 seconds over 1h
+      # % of SUCCESSFUL requests under 4 seconds over 1h.
+      # Numerator and denominator both filter result="success" so failed
+      # requests never enter the successful-request latency population.
       - record: llm_obs:pct_under_4s_1h
         expr: |
-          sum(rate(llm_obs_llm_request_duration_seconds_bucket{le="4"}[1h]))
-          / clamp_min(sum(rate(llm_obs_llm_request_duration_seconds_count[1h])), 1)
+          sum(rate(llm_obs_llm_request_duration_seconds_bucket{result="success",le="4"}[1h]))
+          / clamp_min(sum(rate(llm_obs_llm_request_duration_seconds_count{result="success"}[1h])), 1)
 
       # ── Alert rules ──────────────────────────────────────────────────
 
+      # Minimum-sample gate (docs/SLOS.md): below 100 requests in the SLO
+      # window, percentages are noise.  Breach alerts AND this gate so the
+      # three states are mutually exclusive:
+      #   healthy      → samples ≥ 100 AND no breach condition
+      #   breached     → samples ≥ 100 AND breach condition (alert fires)
+      #   insufficient → samples < 100 (LLMInsufficientData fires; all
+      #                  breach alerts are gated off)
+      # Threshold mirrors MIN_SAMPLES in observability/slos.py.
+
       # Success-rate degradation (7-day SLO < 99.5%)
-      # Suppressed when insufficient data (< 100 samples in 7d)
       - alert: LLMSuccessRateDegradation
-        expr: llm_obs:success_rate_7d < 0.995
+        expr: (llm_obs:success_rate_7d < 0.995) and (llm_obs:request_total_7d >= 100)
         for: 10m
         labels:
           severity: warning
@@ -52,9 +65,11 @@ groups:
           summary: "LLM success rate below 99.5% SLO"
           description: "7-day success rate is {{ $value | humanizePercentage }} (SLO: 99.5%)"
 
-      # Error-budget consumption (> 80% of budget consumed in 7d)
+      # Error-budget consumption (> 80% of budget consumed in 7d).
+      # Note: consumed fraction is only meaningful once the population is big
+      # enough — gated below with the same minimum-sample threshold.
       - alert: LLMErrorBudgetConsumption
-        expr: llm_obs:error_budget_consumed_7d > 0.8
+        expr: (llm_obs:error_budget_consumed_7d > 0.8) and (llm_obs:request_total_7d >= 100)
         for: 10m
         labels:
           severity: warning
@@ -63,9 +78,13 @@ groups:
           summary: "LLM error budget > 80% consumed"
           description: "{{ $value | humanizePercentage }} of 7-day error budget consumed"
 
-      # Latency breach (P95 > 4s over 1h)
+      # Latency breach (P95 > 4s over 1h), successful requests only.
+      # Gate counts 1h successful requests against the same MIN_SAMPLES.
       - alert: LLMLatencyBreach
-        expr: llm_obs:p95_latency_1h > 4
+        expr: |
+          (llm_obs:p95_latency_1h > 4)
+          and
+          (sum(increase(llm_obs_llm_request_duration_seconds_count{result="success"}[1h])) >= 100)
         for: 10m
         labels:
           severity: warning
@@ -74,7 +93,7 @@ groups:
           summary: "LLM P95 latency exceeds 4 seconds"
           description: "P95 latency is {{ $value }}s (SLO: 4s)"
 
-      # Insufficient data — suppress SLO alerts when sample count is too low
+      # Insufficient data — informational alert for the suppressed state
       - alert: LLMInsufficientData
         expr: llm_obs:request_total_7d < 100
         for: 5m
@@ -83,4 +102,4 @@ groups:
           slo: insufficient_data
         annotations:
           summary: "Insufficient data for SLO evaluation"
-          description: "Only {{ $value }} samples in 7d (minimum: 100)"
+          description: "Only {{ $value }} samples in 7d (minimum: 100) — SLO breach alerts are suppressed"
