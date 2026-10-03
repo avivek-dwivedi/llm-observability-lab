@@ -1,0 +1,86 @@
+# Prometheus alerting and recording rules for the LLM observability lab.
+
+groups:
+  - name: llm_slo_rules
+    interval: 30s
+    rules:
+      # ── Recording rules ──────────────────────────────────────────────
+
+      # Total requests over 7d (for 7-day success SLO)
+      - record: llm_obs:request_total_7d
+        expr: sum(increase(llm_obs_llm_requests_total[7d]))
+
+      # Successful requests over 7d
+      - record: llm_obs:request_success_total_7d
+        expr: sum(increase(llm_obs_llm_requests_total{result="success"}[7d]))
+
+      # 7-day success rate
+      - record: llm_obs:success_rate_7d
+        expr: |
+          llm_obs:request_success_total_7d / clamp_min(llm_obs:request_total_7d, 1)
+
+      # Error budget consumed for the 7-day 99.5% SLO
+      # allowed_errors = total * (1 - 0.995) = total * 0.005
+      - record: llm_obs:error_budget_consumed_7d
+        expr: |
+          (llm_obs:request_total_7d - llm_obs:request_success_total_7d)
+          / clamp_min(llm_obs:request_total_7d * 0.005, 1)
+
+      # P95 latency over 1h (for the 4-second latency SLO)
+      - record: llm_obs:p95_latency_1h
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(llm_obs_llm_request_duration_seconds_bucket[1h])))
+
+      # % of requests under 4 seconds over 1h
+      - record: llm_obs:pct_under_4s_1h
+        expr: |
+          sum(rate(llm_obs_llm_request_duration_seconds_bucket{le="4"}[1h]))
+          / clamp_min(sum(rate(llm_obs_llm_request_duration_seconds_count[1h])), 1)
+
+      # ── Alert rules ──────────────────────────────────────────────────
+
+      # Success-rate degradation (7-day SLO < 99.5%)
+      # Suppressed when insufficient data (< 100 samples in 7d)
+      - alert: LLMSuccessRateDegradation
+        expr: llm_obs:success_rate_7d < 0.995
+        for: 10m
+        labels:
+          severity: warning
+          slo: success_rate_7d
+        annotations:
+          summary: "LLM success rate below 99.5% SLO"
+          description: "7-day success rate is {{ $value | humanizePercentage }} (SLO: 99.5%)"
+
+      # Error-budget consumption (> 80% of budget consumed in 7d)
+      - alert: LLMErrorBudgetConsumption
+        expr: llm_obs:error_budget_consumed_7d > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          slo: error_budget_7d
+        annotations:
+          summary: "LLM error budget > 80% consumed"
+          description: "{{ $value | humanizePercentage }} of 7-day error budget consumed"
+
+      # Latency breach (P95 > 4s over 1h)
+      - alert: LLMLatencyBreach
+        expr: llm_obs:p95_latency_1h > 4
+        for: 10m
+        labels:
+          severity: warning
+          slo: latency_p95_4s
+        annotations:
+          summary: "LLM P95 latency exceeds 4 seconds"
+          description: "P95 latency is {{ $value }}s (SLO: 4s)"
+
+      # Insufficient data — suppress SLO alerts when sample count is too low
+      - alert: LLMInsufficientData
+        expr: llm_obs:request_total_7d < 100
+        for: 5m
+        labels:
+          severity: info
+          slo: insufficient_data
+        annotations:
+          summary: "Insufficient data for SLO evaluation"
+          description: "Only {{ $value }} samples in 7d (minimum: 100)"

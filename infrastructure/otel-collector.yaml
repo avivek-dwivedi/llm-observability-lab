@@ -1,0 +1,96 @@
+# OpenTelemetry Collector configuration for the LLM observability lab.
+#
+# Pipelines:
+#   traces:  OTLP (4318/4317) -> drop sensitive -> batch -> 3 trace exporters
+#   metrics: OTLP (4318/4317) -> batch -> Prometheus export_http (8888)
+#
+# The trace pipeline is unchanged from V1. The metrics pipeline is new in V2.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Drop only true secret keys. We KEEP input/output messages so Langfuse
+  # and Phoenix can display them in their Input/Output UI fields.
+  # The prompts used in this lab are safe synthetic ones (e.g. "List three
+  # primary colors") — no PII or secrets. If you use this in production
+  # with sensitive prompts, re-add llm.input_messages / llm.output_messages
+  # to the delete list.
+  attributes/drop_sensitive:
+    actions:
+      - key: authorization
+        action: delete
+      - key: x-api-key
+        action: delete
+      - key: api_key
+        action: delete
+  batch:
+    timeout: 2s
+    send_batch_size: 64
+  # Separate batch for metrics — shorter timeout so Prometheus scrapes fresh data.
+  batch/metrics:
+    timeout: 1s
+    send_batch_size: 128
+
+exporters:
+  # 1. Langfuse — self-hosted OTLP/HTTP.  Auth via public/secret key headers.
+  #    LANGFUSE_HOST etc. are set on the collector container's environment.
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_HOST}/api/public/otel
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_AUTH_HEADER}"
+    compression: gzip
+
+  # 2. Arize Phoenix — self-hosted OTLP/gRPC on 4317.
+  otlp/phoenix:
+    endpoint: ${env:PHOENIX_ENDPOINT}
+    tls:
+      insecure: true
+
+  # 3. LangSmith — SaaS, authenticated OTLP/HTTP.
+  otlphttp/langsmith:
+    endpoint: ${env:LANGSMITH_OTLP_ENDPOINT}
+    headers:
+      x-api-key: ${env:LANGSMITH_API_KEY}
+      Langsmith-Project: ${env:LANGSMITH_PROJECT}
+    compression: gzip
+
+  # 4. Prometheus — exposed for scraping at http://collector:8888/metrics
+  #    Grafana's Prometheus data source scrapes this endpoint.
+  prometheus:
+    endpoint: 0.0.0.0:8888
+    namespace: llm_obs
+    send_timestamps: false
+    metric_expiration: 45m
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/drop_sensitive, batch]
+      exporters:
+        - otlphttp/langfuse
+        - otlp/phoenix
+        - otlphttp/langsmith
+    metrics:
+      receivers: [otlp]
+      processors: [batch/metrics]
+      exporters:
+        - prometheus
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        # Disable the collector's own internal metrics reader to avoid
+        # conflicting with the Prometheus exporter on port 8888.
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8889

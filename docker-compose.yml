@@ -1,0 +1,95 @@
+# docker-compose.yml — local observability stack for the LLM observability lab.
+#
+# Brings up:
+#   1. Arize Phoenix  (UI :6006, OTLP/gRPC internal)
+#   2. Prometheus     (UI :9090, 45-day retention)
+#   3. Grafana        (UI :3001, provisioned dashboards + data source)
+#   4. OTel Collector (OTLP/HTTP :4318, OTLP/gRPC :4317, Prometheus :8888)
+#
+# Langfuse is assumed to already be running externally (port 3000).
+# LangSmith is SaaS — no container; the collector exports to it over HTTPS.
+#
+# Usage:
+#   docker compose up -d
+#   # run your scripts, then:
+#   docker compose down
+
+services:
+  # ---------------------------------------------------------------- Phoenix
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"    # UI only — OTLP/gRPC is internal to the Docker network
+    environment:
+      PHOENIX_ENABLE_OTLP: "true"
+      PHOENIX_HOST: "0.0.0.0"
+      PHOENIX_PORT: "6006"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6006/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------- Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9095:9090"
+    volumes:
+      - ./infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=45d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - otel-collector
+
+  # ---------------------------------------------------------------- Grafana
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "3001:3000"    # Grafana UI on 3001 (3000 is taken by Langfuse)
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/1_normal.json
+      GF_DASHBOARDS_PROVIDERS_ALLOW_UI_UPDATES: "true"
+    depends_on:
+      - prometheus
+
+  # ---------------------------------------------------------------- Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4318:4318"    # OTLP/HTTP (what the Python SDK talks to)
+      - "4317:4317"    # OTLP/gRPC (alternative)
+      - "8888:8888"    # Prometheus exporter (scraped by Prometheus)
+    depends_on:
+      phoenix:
+        condition: service_healthy
+    volumes:
+      - ./infrastructure/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    env_file:
+      - ./infrastructure/collector.env
+    command: ["--config=/etc/otelcol/config.yaml"]
+    # Connect to the external Langfuse network so the collector can reach
+    # the already-running Langfuse container by hostname.
+    networks:
+      - default
+      - langfuse_external
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  langfuse_external:
+    name: langfuse_default
+    external: true
