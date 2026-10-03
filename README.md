@@ -130,6 +130,23 @@ On the Langfuse side: 50 parallel traces with clean prompt/response text,
 P95 end-to-end latency ~0.9–1.2 s, per-trace cost percentiles, and native
 evaluation scores.
 
+### Dashboard highlights
+
+**Langfuse — Tracing:** every trace shows clean prompt/response text (no SDK
+objects), tokens, cost and latency:
+
+![Langfuse tracing page with clean traces](Evidence/01_langfuse_tracing.png)
+
+**Langfuse — Cost dashboard:** per-trace and per-observation cost, model
+usage split, all priced via the Model Definition API:
+
+![Langfuse cost dashboard](Evidence/02_langfuse_cost_dashboard.png)
+
+**Grafana — scenario dashboards:** the same metrics pipeline replayed under
+Normal / LLM-Degraded / System-Failure profiles:
+
+![Grafana System Failure scenario dashboard](Evidence/14_grafana_system_failure.png)
+
 ## Repository layout
 
 ```
