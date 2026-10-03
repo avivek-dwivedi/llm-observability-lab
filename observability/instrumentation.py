@@ -130,6 +130,8 @@ def completions_span(
     output_tokens: int = 0,
     max_tokens: int = 0,
     temperature: float = 0.0,
+    user_id: str = "",
+    session_id: str = "",
     extra_attributes: dict | None = None,
 ) -> Iterator[trace.Span]:
     """Create a manual Completions child span with clean input/output.
@@ -168,6 +170,14 @@ def completions_span(
     if max_tokens:
         attrs["gen_ai.request.max_tokens"] = max_tokens
     attrs["gen_ai.request.temperature"] = temperature
+
+    # Langfuse-specific identity attributes. Langfuse maps these on the ROOT
+    # span to trace.userId / trace.sessionId, which powers the Users view,
+    # Top-Users-by-cost panels and session grouping.
+    if user_id:
+        attrs["langfuse.user.id"] = user_id
+    if session_id:
+        attrs["langfuse.session.id"] = session_id
 
     # Clean input messages — the key fix for the groq.Omit problem
     if prompt:

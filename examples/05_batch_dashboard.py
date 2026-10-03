@@ -76,6 +76,8 @@ def _run_sequential(client) -> list:
             prompt=prompt,
             max_tokens=MAX_TOKENS,
             workflow="batch_sequential",
+            user_id=f"user_{i % 5:02d}",
+            session_id="batch_seq",
         )
         results.append(result)
         print(f"  [{i+1:02d}/{N_SEQ}] {trace_name}  "
@@ -98,6 +100,8 @@ async def _run_concurrent(client) -> list:
             prompt=prompt,
             max_tokens=MAX_TOKENS,
             workflow="batch_concurrent",
+            user_id=f"user_{idx % 5:02d}",
+            session_id="batch_conc",
         )
     return await asyncio.gather(*[_one(i) for i in range(N_CONC)])
 

@@ -57,7 +57,8 @@ def groq_chat(client, *, prompt: str, max_tokens: int = 64, temperature: float =
     )
 
 
-def groq_chat_traced(client, *, prompt: str, max_tokens: int = 64, temperature: float = 0.0):
+def groq_chat_traced(client, *, prompt: str, max_tokens: int = 64, temperature: float = 0.0,
+                     user_id: str = "", session_id: str = ""):
     """One chat completion wrapped in a clean Completions span.
 
     Creates a manual Completions child span with clean llm.input_messages /
@@ -78,6 +79,8 @@ def groq_chat_traced(client, *, prompt: str, max_tokens: int = 64, temperature: 
         prompt=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        user_id=user_id,
+        session_id=session_id,
     ) as span:
         import time as _time
         start = _time.perf_counter()
@@ -120,6 +123,8 @@ def individual_call(
     max_tokens: int = 64,
     temperature: float = 0.0,
     workflow: str = "",
+    user_id: str = "",
+    session_id: str = "",
 ) -> CallResult:
     """Make one Groq call as a STANDALONE trace.
 
@@ -149,6 +154,8 @@ def individual_call(
         prompt=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        user_id=user_id,
+        session_id=session_id,
     ) as span:
         start = _time.perf_counter()
         try:
@@ -303,3 +310,69 @@ def shutdown_all() -> None:
         shutdown_metrics()
     with suppress(Exception):
         shutdown_otel()
+
+
+def post_langfuse_score(
+    *,
+    trace_id: str,
+    name: str,
+    value: float,
+    comment: str = "",
+) -> bool:
+    """POST one native Score object to Langfuse for an existing trace.
+
+    Span attributes (``langfuse.score.*``) show up in the trace detail view,
+    but Langfuse only counts native **Score objects** in the Scores dashboard
+    / Usage Management 'Total Score Count' panels.  This helper posts the
+    score via ``POST /api/public/scores``.
+
+    Args:
+        trace_id: 32-hex OTel trace id (CallResult.trace_id) — Langfuse's
+            OTel ingestion maps these 1:1 to its trace ids.
+        name: score name, e.g. "relevance".
+        value: numeric score value.
+        comment: optional human-readable feedback.
+
+    Returns True if the score was accepted (201), False otherwise.
+    Failures are non-fatal: evaluation continues without scores.
+    """
+    import base64
+    import json
+    import urllib.error
+    import urllib.request
+
+    host = os.getenv("LANGFUSE_BASE_URL", "http://localhost:3000").rstrip("/")
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    sk = os.getenv("LANGFUSE_SECRET_KEY", "")
+    if not (pk and sk) or not trace_id:
+        return False
+
+    auth = base64.b64encode(f"{pk}:{sk}".encode()).decode()
+    body = json.dumps({
+        "id": __import__("uuid").uuid4().hex,
+        "name": name,
+        "traceId": trace_id,
+        "value": value,
+        "dataType": "NUMERIC",
+        "source": "API",
+        "environment": "default",
+        "comment": comment or None,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{host}/api/public/scores",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 201
+    except urllib.error.HTTPError as e:
+        # 200 on update-by-id; anything else is a hard failure for this score.
+        return e.code in (200,)
+    except Exception:
+        return False

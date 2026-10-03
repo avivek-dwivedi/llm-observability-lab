@@ -52,6 +52,8 @@ def _run_sequential(client, n: int) -> list[CallResult]:
             prompt=prompt,
             max_tokens=64,
             workflow="multiple_calls",
+            user_id=f"user_{i % 5:02d}",
+            session_id=f"seq_{i // 5:02d}",
         )
         results.append(result)
         print(f"  [{i+1:02d}/{n}] {trace_name}  "
@@ -74,6 +76,8 @@ async def _run_concurrent(client, n: int, offset: int) -> list[CallResult]:
             prompt=prompt,
             max_tokens=64,
             workflow="multiple_calls_concurrent",
+            user_id=f"user_{idx % 5:02d}",
+            session_id=f"conc_{(offset + idx) // 5:02d}",
         )
 
     results = await asyncio.gather(*[_one(i) for i in range(n)])

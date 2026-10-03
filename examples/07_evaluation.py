@@ -209,6 +209,23 @@ def _run_eval_case(client, case: EvalCase, model: str, allow_live: bool) -> dict
         )
         record_call_metrics(result, workflow=trace_name)
 
+        # Capture real trace id (inside span context) for native score posting
+        ctx = span.get_span_context()
+        otel_trace_id = f"{ctx.trace_id:032x}"
+
+    # Post native Score objects to Langfuse (Scores dashboards count ONLY
+    # native Score objects — span attributes alone show Score Count = 0).
+    posted = 0
+    from examples._common import post_langfuse_score
+    for s in scores:
+        if post_langfuse_score(
+            trace_id=otel_trace_id, name=s.name, value=s.value, comment=s.comment,
+        ):
+            posted += 1
+    if posted < len(scores):
+        print(f"    ℹ native scores posted: {posted}/{len(scores)} "
+              f"(Langfuse down or keys missing — span attrs still recorded)")
+
     # Print results
     avg = sum(s.value for s in scores) / len(scores) if scores else 0
     print(f"\n  [{trace_name}]")
