@@ -1,9 +1,9 @@
-# observability-layer
+# llm-observability-lab
 
 **Production-grade LLM observability lab** — one instrumented LLM application
 watched simultaneously by **five** observability platforms.
 
-GitHub: [scaiclasses/observability-layer](https://github.com/scaiclasses/observability-layer)
+GitHub: [avivek-dwivedi/llm-observability-lab](https://github.com/avivek-dwivedi/llm-observability-lab)
 
 ```
                     ┌───────────────────────────┐
@@ -21,7 +21,7 @@ GitHub: [scaiclasses/observability-layer](https://github.com/scaiclasses/observa
 
 > This is **not** a chatbot or serving product — no frontend, no API layer.
 > The example scripts exist to generate *controlled, realistic* telemetry.
-> Built by **Vivek** (**[@scaiclasses](https://github.com/scaiclasses)**)
+> Built by **Vivek Dwivedi** (**[@avivek-dwivedi](https://github.com/avivek-dwivedi)**)
 > as a hands-on SRE-meets-LLM-engineering portfolio project.
 
 ## Why this project exists
@@ -150,7 +150,7 @@ Normal / LLM-Degraded / System-Failure profiles:
 ## Repository layout
 
 ```
-observability-layer/
+llm-observability-lab/
 ├── observability/                # the reusable instrumentation library
 │   ├── instrumentation.py        # TracerProvider, workflow + completions spans
 │   ├── metrics.py                 # counters + histogram + flush
